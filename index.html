@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>日本一のバス定員シミュレーター</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; max-width: 600px; margin: 20px auto; padding: 20px; background: #f4f4f4; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .input-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        select, input { width: 100%; padding: 8px; box-sizing: border-box; }
+        .result { margin-top: 20px; padding: 15px; border-left: 5px solid #007bff; background: #e7f3ff; }
+        .alert { color: red; font-weight: bold; }
+        .success { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>バス定員シミュレーター</h2>
+    
+    <div class="input-group">
+        <label>パワートレイン選択</label>
+        <select id="busType" onchange="calculate()">
+            <option value="ICE">エンジン車 (エルガ ICE)</option>
+            <option value="EV">電気バス (エルガ EV)</option>
+        </select>
+    </div>
+
+    <div class="input-group">
+        <label>撤去する座席数 (標準29席から何席減らすか)</label>
+        <input type="number" id="removeSeats" value="5" min="0" max="26" oninput="calculate()">
+        <small>※バリアフリー法により最低3席は必要です</small>
+    </div>
+
+    <div class="result" id="resultArea">
+        </div>
+</div>
+
+<script>
+function calculate() {
+    // --- 基本設定値 (定数) ---
+    const PERSON_WEIGHT = 55;   // 法定体重(kg)
+    const SEAT_AREA = 0.45;     // 1席あたりの専有面積(m2)
+    const STANDING_REQ = 0.14;  // 立席1人あたりの必要面積(m2)
+    const MAX_WEIGHT = 15000;   // 車両総重量の限界(kg)
+    const BASE_SEATS = 29;      // 標準座席数
+
+    // --- 入力値の取得 ---
+    const busType = document.getElementById('busType').value;
+    const removeSeats = parseInt(document.getElementById('removeSeats').value) || 0;
+
+    // --- 車両ごとの特性設定 ---
+    let baseWeight, areaEfficiency;
+    if (busType === 'ICE') {
+        baseWeight = 10500;     // エンジン車は比較的軽い
+        areaEfficiency = 0.85;  // エンジンルームの段差で面積効率が悪い
+    } else {
+        baseWeight = 12000;     // EVはバッテリーで重い
+        areaEfficiency = 1.0;   // フルフラットで面積効率が良い
+    }
+
+    // --- 計算ロジック ---
+    // 1. 残る座席数
+    const remainingSeats = BASE_SEATS - removeSeats;
+    
+    // 2. 増加する立席数 (撤去面積 / 0.14 * 効率)
+    const additionalStanding = Math.floor((removeSeats * SEAT_AREA) / STANDING_REQ * areaEfficiency);
+    
+    // 3. 基本の立席数(標準時) + 増加分 (エルガ標準立席を57人と仮定)
+    const totalStanding = 57 + additionalStanding;
+    
+    // 4. 合計定員 (座席 + 立席 + 乗務員1)
+    const totalCapacity = remainingSeats + totalStanding + 1;
+    
+    // 5. 車両総重量
+    const totalWeight = baseWeight + (totalCapacity * PERSON_WEIGHT);
+
+    // --- 結果の表示 ---
+    const resultArea = document.getElementById('resultArea');
+    let html = `
+        <p>合計定員: <strong>${totalCapacity} 名</strong></p>
+        <p>車両総重量: <strong>${totalWeight.toLocaleString()} kg</strong></p>
+    `;
+
+    // 判定
+    if (totalWeight > MAX_WEIGHT) {
+        html += `<p class="alert">【不合格】15トンを超えました！軽量化が必要です。</p>`;
+    } else if (totalCapacity >= 95) {
+        html += `<p class="success">【日本一達成！】95名以上の認可が狙えます！</p>`;
+    } else {
+        html += `<p>【合格】車検に通る範囲内です。</p>`;
+    }
+
+    resultArea.innerHTML = html;
+}
+
+// 初回計算
+calculate();
+</script>
+
+</body>
+</html>
