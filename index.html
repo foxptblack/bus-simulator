@@ -2,157 +2,230 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>日本一のバス定員シミュレーター Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>95人乗りバス：吊り革・安全基準シミュレーター</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { font-family: sans-serif; line-height: 1.6; max-width: 700px; margin: 20px auto; padding: 20px; background: #f0f2f5; }
-        .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        .input-group { margin-bottom: 20px; padding: 15px; border: 1px solid #eee; border-radius: 8px; }
-        label { display: block; font-weight: bold; margin-bottom: 8px; color: #333; }
-        .row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
-        select, input[type="range"], input[type="number"] { width: 100%; }
-        .result { margin-top: 20px; padding: 20px; border-radius: 8px; background: #2c3e50; color: white; }
-        .status { font-size: 1.2em; font-weight: bold; padding: 10px; border-radius: 5px; margin-top: 10px; text-align: center; }
-        .pass { background: #27ae60; }
-        .fail { background: #e74c3c; }
-        .record { background: #f1c40f; color: #000; }
-        .meter-label { display: flex; justify-content: space-between; font-size: 0.9em; color: #666; }
+        .bus-floor { background: #555; position: relative; border-radius: 40px 15px 15px 40px; }
+        .seat { width: 30px; height: 30px; border-radius: 4px; cursor: pointer; transition: all 0.2s; position: absolute; z-index: 10; }
+        .seat.active { background: #3498db; border: 2px solid #2980b9; }
+        .seat.removed { background: #2ecc71; border: 2px solid #27ae60; opacity: 0.3; }
+        .seat.priority { background: #e67e22; border: 2px solid #d35400; }
+        .strap-icon { position: absolute; color: white; opacity: 0.2; font-size: 10px; pointer-events: none; }
+        .indicator-bar { height: 10px; background: #eee; border-radius: 5px; overflow: hidden; }
+        .indicator-fill { height: 100%; transition: width 0.3s; }
+        .pass-text { color: #2ecc71; font-weight: bold; }
+        .fail-text { color: #e74c3c; font-weight: bold; }
     </style>
 </head>
-<body>
+<body class="bg-gray-100 p-4 md:p-8">
 
-<div class="card">
-    <h2>日本一のバス定員シミュレーター Pro</h2>
-    
-    <div class="input-group">
-        <label>1. パワートレイン</label>
-        <select id="busType" onchange="toggleInputs(); calculate();">
-            <option value="ICE">エンジン車 (エルガ ICE)</option>
-            <option value="EV">電気バス (エルガ EV)</option>
-        </select>
+    <div class="max-w-5xl mx-auto bg-white rounded-xl shadow-2xl overflow-hidden">
+        <div class="bg-slate-900 p-6 text-white grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="text-center border-r border-slate-700">
+                <div class="text-xs uppercase text-slate-400">合計定員 / 立席</div>
+                <div id="disp-capacity" class="text-4xl font-bold text-yellow-400">--</div>
+            </div>
+            <div class="text-center border-r border-slate-700">
+                <div class="text-xs uppercase text-slate-400">車両総重量</div>
+                <div id="disp-weight" class="text-2xl font-bold">-- kg</div>
+            </div>
+            <div class="text-center border-r border-slate-700">
+                <div class="text-xs uppercase text-slate-400">吊り革充足率</div>
+                <div id="disp-strap-status" class="text-xl font-semibold">-- %</div>
+            </div>
+            <div class="flex items-center justify-center">
+                <div id="disp-status" class="px-4 py-2 rounded-full font-bold text-sm text-center">--</div>
+            </div>
+        </div>
+
+        <div class="flex flex-col md:flex-row">
+            <div class="w-full md:w-80 p-6 bg-slate-50 border-r border-gray-200 space-y-6">
+                <div>
+                    <label class="block text-sm font-bold mb-2">パワートレイン</label>
+                    <select id="bus-type" class="w-full p-2 border rounded" onchange="init();">
+                        <option value="ICE">エンジン車 (エルガ ICE)</option>
+                        <option value="EV">電気バス (エルガ EV)</option>
+                    </select>
+                </div>
+
+                <div class="input-group bg-blue-50 p-3 rounded-lg border border-blue-100">
+                    <label class="block text-sm font-bold mb-1 text-blue-800">吊り革・握り棒の増設</label>
+                    <div class="flex justify-between text-xs mb-1"><span>0本</span><span id="strap-val">50</span><span>120本</span></div>
+                    <input type="range" id="strap-count" min="0" max="120" step="1" value="60" class="w-full" oninput="update();">
+                    <p class="text-[10px] text-blue-600 mt-1">※1本あたり約1kg(レール込)加算</p>
+                </div>
+
+                <div id="ice-options" class="space-y-4">
+                    <label class="block text-sm font-bold mb-1">燃料タンク (<span id="fuel-val"></span>L)</label>
+                    <input type="range" id="fuel-tank" min="100" max="350" step="10" value="200" class="w-full" oninput="update();">
+                </div>
+
+                <div id="ev-options" class="hidden space-y-4">
+                    <label class="block text-sm font-bold mb-1">バッテリー (<span id="bat-val"></span>kWh)</label>
+                    <input type="range" id="bat-cap" min="50" max="450" step="10" value="200" class="w-full" oninput="update();">
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <input type="checkbox" id="spare-tire" onchange="update();">
+                    <label class="text-sm font-bold">スペアタイヤ撤去 (-80kg)</label>
+                </div>
+
+                <hr>
+
+                <div class="space-y-4">
+                    <h4 class="font-bold text-sm uppercase text-gray-500">法規コンプライアンス</h4>
+                    <ul class="text-xs space-y-2">
+                        <li id="chk-gvw">● 総重量 15,000kg以内</li>
+                        <li id="chk-axle">● 軸重 10,000kg以内</li>
+                        <li id="chk-strap">● 吊り革数 ≧ 立席数</li>
+                        <li id="chk-seats">● 優先席 3席以上維持</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="flex-1 p-8 bg-gray-200">
+                <div class="bus-floor w-[800px] h-[240px] mx-auto shadow-inner border-4 border-slate-400">
+                    <div class="absolute left-6 top-8 w-12 h-12 bg-slate-700 rounded text-white flex items-center justify-center text-[10px]">DRIVER</div>
+                    <div class="absolute left-[120px] -top-2 w-16 h-4 bg-black rounded-sm"></div>
+                    <div class="absolute left-[120px] -bottom-2 w-16 h-4 bg-black rounded-sm"></div>
+                    <div class="absolute right-[180px] -top-2 w-20 h-4 bg-black rounded-sm"></div>
+                    <div class="absolute right-[180px] -bottom-2 w-20 h-4 bg-black rounded-sm"></div>
+                    
+                    <div id="strap-layer" class="absolute inset-0 flex flex-wrap p-10 pointer-events-none"></div>
+                    <div id="seat-container"></div>
+                </div>
+
+                <div class="mt-12 w-[800px] mx-auto grid grid-cols-2 gap-20">
+                    <div>
+                        <div class="text-xs font-bold text-gray-500 mb-1">FRONT AXLE LOAD</div>
+                        <div class="indicator-bar"><div id="bar-front" class="indicator-fill bg-blue-500"></div></div>
+                        <div id="txt-front" class="text-right text-xs mt-1">-- kg</div>
+                    </div>
+                    <div>
+                        <div class="text-xs font-bold text-gray-500 mb-1">REAR AXLE LOAD</div>
+                        <div class="indicator-bar"><div id="bar-rear" class="indicator-fill bg-blue-500"></div></div>
+                        <div id="txt-rear" class="text-right text-xs mt-1">-- kg</div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-
-    <div class="input-group">
-        <label>2. 重量・エネルギー設定</label>
-        
-        <div id="iceSettings">
-            <div class="meter-label"><span>燃料タンク容量</span><span id="fuelVal">200</span>L</div>
-            <input type="range" id="fuelTank" min="100" max="300" step="10" value="200" oninput="calculate()">
-        </div>
-
-        <div id="evSettings" style="display:none;">
-            <div class="meter-label"><span>バッテリー容量</span><span id="batVal">250</span>kWh</div>
-            <input type="range" id="batteryCap" min="50" max="450" step="10" value="250" oninput="calculate()">
-            <small>※減らすと走行距離が短くなります</small>
-        </div>
-
-        <div style="margin-top:15px;">
-            <input type="checkbox" id="spareTire" onchange="calculate()"> <label style="display:inline;" for="spareTire">スペアタイヤを撤去する (-80kg)</label>
-        </div>
-    </div>
-
-    <div class="input-group">
-        <label>3. 座席撤去と場所（計29席）</label>
-        <div class="row">
-            <span>前方の席を</span>
-            <input type="number" id="frontRemoved" value="5" min="0" max="15" oninput="calculate()">
-            <span>席消す</span>
-        </div>
-        <div class="row">
-            <span>後方の席を</span>
-            <input type="number" id="rearRemoved" value="5" min="0" max="14" oninput="calculate()">
-            <span>席消す</span>
-        </div>
-        <small>※合計26席まで撤去可能（3席残し）</small>
-    </div>
-
-    <div class="result" id="resultArea">
-        </div>
-</div>
 
 <script>
-function toggleInputs() {
-    const type = document.getElementById('busType').value;
-    document.getElementById('iceSettings').style.display = (type === 'ICE') ? 'block' : 'none';
-    document.getElementById('evSettings').style.display = (type === 'EV') ? 'block' : 'none';
-}
+    let seats = [];
+    const BASE_SEATS_COUNT = 29;
+    const ICE_WEIGHT = 10100;
+    const EV_WEIGHT = 10400;
 
-function calculate() {
-    const busType = document.getElementById('busType').value;
-    const frontRemoved = parseInt(document.getElementById('frontRemoved').value) || 0;
-    const rearRemoved = parseInt(document.getElementById('rearRemoved').value) || 0;
-    const isSpareRemoved = document.getElementById('spareTire').checked;
-    
-    // 定数
-    const PERSON_W = 55;
-    const SEAT_W = 15;
-    const MAX_GVW = 15000;
-    const MAX_AXLE = 10000; // 軸重制限
-    const WHEELBASE = 5.3;
+    function init() {
+        const type = document.getElementById('bus-type').value;
+        document.getElementById('ice-options').classList.toggle('hidden', type === 'EV');
+        document.getElementById('ev-options').classList.toggle('hidden', type === 'ICE');
+        
+        seats = [];
+        const container = document.getElementById('seat-container');
+        container.innerHTML = '';
 
-    // 1. 車両自重の設定
-    let baseWeight = (busType === 'ICE') ? 10200 : 10500;
-    let areaEfficiency = (busType === 'ICE') ? 0.85 : 1.0;
+        for (let i = 0; i < BASE_SEATS_COUNT; i++) {
+            let x, y;
+            if (i < 5) { x = 120 + i*45; y = 20; }
+            else if (i < 10) { x = 120 + (i-5)*45; y = 180; }
+            else if (i < 20) { x = 400 + (i-10)*40; y = 20; }
+            else { x = 400 + (i-20)*40; y = 180; }
 
-    // 2. 追加重量・軽量化計算
-    if (busType === 'ICE') {
-        const fuelL = parseInt(document.getElementById('fuelTank').value);
-        document.getElementById('fuelVal').innerText = fuelL;
-        baseWeight += (fuelL * 0.83); // 軽油密度 約0.83
-    } else {
-        const batKwh = parseInt(document.getElementById('batteryCap').value);
-        document.getElementById('batVal').innerText = batKwh;
-        baseWeight += (batKwh * 7); // バッテリー重量 約7kg/kWh想定
-    }
-    if (isSpareRemoved) baseWeight -= 80;
+            const s = { id: i, isRemoved: false, isPriority: (i < 3), x: x, y: y };
+            seats.push(s);
 
-    // 3. 定員計算
-    const totalRemoved = frontRemoved + rearRemoved;
-    const addStand = Math.floor((totalRemoved * 0.45) / 0.14 * areaEfficiency);
-    const capacity = (29 - totalRemoved) + (57 + addStand) + 1;
-
-    // 4. 軸重計算（簡易モーメント）
-    // 重心位置の計算。前を消すと重心が後ろに、後ろを消すと前に移動。
-    let frontAxleWeight = baseWeight * 0.4 + (capacity * PERSON_W * 0.45);
-    let rearAxleWeight = baseWeight * 0.6 + (capacity * PERSON_W * 0.55);
-
-    // 撤去場所による軸重の変化
-    frontAxleWeight -= (frontRemoved * SEAT_W * 0.8); 
-    rearAxleWeight -= (rearRemoved * SEAT_W * 0.8);
-
-    const totalWeight = frontAxleWeight + rearAxleWeight;
-
-    // 結果表示
-    const res = document.getElementById('resultArea');
-    let statusClass = "pass";
-    let statusMsg = "車検合格";
-
-    if (totalWeight > MAX_GVW) {
-        statusClass = "fail"; statusMsg = "重量オーバー(15t超)";
-    } else if (frontAxleWeight > MAX_AXLE || rearAxleWeight > MAX_AXLE) {
-        statusClass = "fail"; statusMsg = "軸重制限オーバー(10t超)";
-    } else if (totalRemoved > 26) {
-        statusClass = "fail"; statusMsg = "座席不足(3席必要)";
-    } else if (capacity >= 95) {
-        statusClass = "record"; statusMsg = "日本一達成！！";
+            const div = document.createElement('div');
+            div.className = `seat ${s.isPriority ? 'priority' : 'active'}`;
+            div.style.left = x + 'px'; div.style.top = y + 'px';
+            div.onclick = () => { s.isRemoved = !s.isRemoved; div.classList.toggle('removed', s.isRemoved); update(); };
+            container.appendChild(div);
+        }
+        update();
     }
 
-    res.innerHTML = `
-        <div style="display:flex; justify-content:space-between;">
-            <div>定員: <span style="font-size:1.5em; color:#f1c40f;">${capacity}</span> 名</div>
-            <div>総重量: ${Math.round(totalWeight).toLocaleString()} kg</div>
-        </div>
-        <hr>
-        <div style="font-size:0.9em;">
-            前軸重: ${Math.round(frontAxleWeight).toLocaleString()} kg / 
-            後軸重: ${Math.round(rearAxleWeight).toLocaleString()} kg
-        </div>
-        <div class="status ${statusClass}">${statusMsg}</div>
-    `;
-}
+    function update() {
+        const busType = document.getElementById('bus-type').value;
+        const fuelTank = parseInt(document.getElementById('fuel-tank').value);
+        const batCap = parseInt(document.getElementById('bat-cap').value);
+        const spareRemoved = document.getElementById('spare-tire').checked;
+        const strapCount = parseInt(document.getElementById('strap-count').value);
 
-toggleInputs();
-calculate();
+        document.getElementById('fuel-val').innerText = fuelTank;
+        document.getElementById('bat-val').innerText = batCap;
+        document.getElementById('strap-val').innerText = strapCount;
+
+        // --- 重量計算 ---
+        let vWeight = (busType === 'ICE') ? ICE_WEIGHT : EV_WEIGHT;
+        if (busType === 'ICE') vWeight += fuelTank * 0.83;
+        else vWeight += batCap * 8;
+        if (spareRemoved) vWeight -= 80;
+        
+        // 吊り革重量加算 (1本1kg)
+        vWeight += strapCount * 1.0;
+
+        // --- 定員計算 ---
+        const removedCount = seats.filter(s => s.isRemoved).length;
+        const remainingSeats = BASE_SEATS_COUNT - removedCount;
+        const standingBase = 57; 
+        const efficiency = (busType === 'ICE') ? 0.85 : 1.0;
+        const addStand = Math.floor((removedCount * 0.45) / 0.14 * efficiency);
+        const totalStanding = standingBase + addStand;
+        const capacity = remainingSeats + totalStanding + 1;
+
+        // --- 軸重計算 ---
+        const totalPassWeight = capacity * 55;
+        const totalWeight = vWeight + totalPassWeight;
+        const frontRemoved = seats.filter(s => s.isRemoved && s.x < 400).length;
+        let frontWeight = vWeight * 0.42 + (totalPassWeight * 0.45) - (frontRemoved * 20);
+        let rearWeight = totalWeight - frontWeight;
+
+        // --- 画面更新 ---
+        document.getElementById('disp-capacity').innerHTML = `${capacity} <span class="text-sm">(${totalStanding})</span>`;
+        document.getElementById('disp-weight').innerText = `${Math.round(totalWeight).toLocaleString()} kg`;
+        
+        const strapRate = Math.min(100, Math.round((strapCount / totalStanding) * 100));
+        document.getElementById('disp-strap-status').innerText = `${strapRate}% (${strapCount}/${totalStanding})`;
+
+        document.getElementById('txt-front').innerText = `${Math.round(frontWeight).toLocaleString()} kg`;
+        document.getElementById('txt-rear').innerText = `${Math.round(rearWeight).toLocaleString()} kg`;
+        document.getElementById('bar-front').style.width = (frontWeight / 10000 * 100) + '%';
+        document.getElementById('bar-rear').style.width = (rearWeight / 10000 * 100) + '%';
+
+        // --- 法規チェック ---
+        const isGvwOk = totalWeight <= 15000;
+        const isAxleOk = frontWeight <= 10000 && rearWeight <= 10000;
+        const isStrapOk = strapCount >= totalStanding;
+        const isPriorityOk = seats.filter(s => s.isPriority && !s.isRemoved).length >= 3;
+
+        updateCheck('chk-gvw', isGvwOk);
+        updateCheck('chk-axle', isAxleOk);
+        updateCheck('chk-strap', isStrapOk);
+        updateCheck('chk-seats', isPriorityOk);
+
+        const status = document.getElementById('disp-status');
+        if (isGvwOk && isAxleOk && isStrapOk && isPriorityOk) {
+            status.innerText = capacity >= 95 ? "日本一達成！" : "合格";
+            status.className = `px-4 py-2 rounded-full font-bold text-sm ${capacity >= 95 ? 'bg-yellow-500 animate-bounce' : 'bg-green-500'} text-white`;
+        } else {
+            status.innerText = "不適合";
+            status.className = "px-4 py-2 rounded-full font-bold text-sm bg-red-500 text-white";
+        }
+
+        // 吊り革のビジュアル表示
+        const layer = document.getElementById('strap-layer');
+        layer.innerHTML = '⭕'.repeat(Math.min(strapCount, 150));
+    }
+
+    function updateCheck(id, pass) {
+        const el = document.getElementById(id);
+        el.className = pass ? 'pass-text' : 'fail-text';
+        el.innerText = (pass ? '✔ ' : '✘ ') + el.innerText.substring(2);
+    }
+
+    init();
 </script>
-
 </body>
 </html>
