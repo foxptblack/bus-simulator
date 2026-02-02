@@ -3,108 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>95人乗りバス：吊り革過密シミュレーター</title>
+    <title>95人乗りバス：座席復元可能モデル</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .bus-floor { background: #444; position: relative; border-radius: 40px 15px 15px 40px; overflow: hidden; }
-        .seat { width: 28px; height: 28px; border-radius: 4px; cursor: pointer; transition: all 0.2s; position: absolute; z-index: 20; }
-        .seat.active { background: #3498db; border: 2px solid #2980b9; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
-        .seat.removed { visibility: hidden; }
-        .seat.priority { background: #e67e22; border: 2px solid #d35400; }
+        .bus-floor { background: #333; position: relative; border-radius: 40px 15px 15px 40px; overflow: hidden; border: 4px solid #555; }
+        .seat { width: 30px; height: 30px; border-radius: 4px; cursor: pointer; transition: all 0.2s; position: absolute; z-index: 20; }
         
-        /* 吊り革のビジュアル */
-        .strap { position: absolute; width: 8px; height: 16px; border: 1.5px solid #ccc; border-radius: 0 0 4px 4px; border-top: 0; z-index: 10; opacity: 0.8; }
-        .strap::before { content: ''; position: absolute; top: -12px; left: 3px; width: 1.5px; height: 12px; background: #999; }
+        /* 設置されている座席 */
+        .seat.active { background: #3498db; border: 2px solid #2980b9; box-shadow: 0 4px 0 #1c5980; }
+        .seat.priority { background: #e67e22; border: 2px solid #d35400; box-shadow: 0 4px 0 #a04100; }
+        
+        /* 撤去された座席（ゴースト状態） */
+        .seat.removed { 
+            background: rgba(255, 255, 255, 0.05); 
+            border: 1.5px dashed rgba(255, 255, 255, 0.3); 
+            box-shadow: none;
+            transform: scale(0.9);
+        }
+
+        .strap { position: absolute; width: 8px; height: 16px; border: 1.5px solid #ccc; border-radius: 0 0 4px 4px; border-top: 0; z-index: 10; opacity: 0.6; }
+        .strap::before { content: ''; position: absolute; top: -12px; left: 3px; width: 1.5px; height: 12px; background: #888; }
         .strap.lack { border-color: #e74c3c; opacity: 1; filter: drop-shadow(0 0 2px red); }
 
-        .indicator-bar { height: 12px; background: #333; border-radius: 6px; overflow: hidden; }
-        .indicator-fill { height: 100%; transition: width 0.3s; }
-        .pass-text { color: #2ecc71; font-weight: bold; }
-        .fail-text { color: #e74c3c; font-weight: bold; }
+        .indicator-bar { height: 12px; background: #1a1a1a; border-radius: 6px; overflow: hidden; }
+        .indicator-fill { height: 100%; transition: width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
     </style>
 </head>
-<body class="bg-gray-900 text-gray-100 p-4 md:p-8">
+<body class="bg-slate-900 text-slate-100 p-4 md:p-8">
 
-    <div class="max-w-6xl mx-auto bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 overflow-hidden">
-        <div class="bg-slate-950 p-6 grid grid-cols-1 md:grid-cols-4 gap-6">
+    <div class="max-w-6xl mx-auto bg-slate-800 rounded-3xl shadow-2xl border border-slate-700 overflow-hidden">
+        <div class="bg-slate-950 p-8 grid grid-cols-1 md:grid-cols-4 gap-8 border-b border-slate-700">
             <div class="text-center">
-                <div class="text-xs text-slate-500 mb-1">合計定員 (立席数)</div>
-                <div id="disp-capacity" class="text-5xl font-black text-yellow-400">--</div>
+                <div class="text-xs text-slate-500 font-bold mb-2 uppercase tracking-widest">Capacity (Standing)</div>
+                <div id="disp-capacity" class="text-6xl font-black text-yellow-400">--</div>
             </div>
             <div class="text-center">
-                <div class="text-xs text-slate-500 mb-1">吊り革設置状況</div>
-                <div id="disp-strap-status" class="text-2xl font-bold text-blue-400">--</div>
-                <div id="strap-warning" class="text-[10px] mt-1"></div>
+                <div class="text-xs text-slate-500 font-bold mb-2 uppercase tracking-widest">Straps Count</div>
+                <div id="disp-strap-status" class="text-3xl font-bold text-sky-400">--</div>
+                <div id="strap-warning" class="text-[10px] font-bold mt-2"></div>
             </div>
             <div class="text-center">
-                <div class="text-xs text-slate-500 mb-1">車両総重量</div>
-                <div id="disp-weight" class="text-2xl font-bold">-- kg</div>
+                <div class="text-xs text-slate-500 font-bold mb-2 uppercase tracking-widest">Gross Weight</div>
+                <div id="disp-weight" class="text-3xl font-bold">-- kg</div>
             </div>
-            <div class="flex items-center justify-center">
-                <div id="disp-status" class="w-full py-3 rounded-xl font-black text-center text-lg">--</div>
+            <div class="flex items-center">
+                <div id="disp-status" class="w-full py-4 rounded-2xl font-black text-center text-xl shadow-inner">--</div>
             </div>
         </div>
 
         <div class="flex flex-col lg:flex-row">
-            <div class="w-full lg:w-72 p-6 bg-slate-900 border-r border-slate-700 space-y-6">
+            <div class="w-full lg:w-80 p-8 bg-slate-900/50 space-y-8">
                 <div>
-                    <label class="block text-sm font-bold mb-2">パワートレイン</label>
-                    <select id="bus-type" class="w-full p-2 bg-slate-800 border border-slate-600 rounded" onchange="init();">
-                        <option value="ICE">エンジン (エルガ ICE)</option>
-                        <option value="EV">電気 (エルガ EV)</option>
+                    <label class="block text-xs font-black text-slate-400 uppercase mb-3">Model Type</label>
+                    <select id="bus-type" class="w-full p-3 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none" onchange="init();">
+                        <option value="ICE">ERGA - Diesel (ICE)</option>
+                        <option value="EV">ERGA - Electric (EV)</option>
                     </select>
                 </div>
 
-                <div class="bg-slate-800 p-4 rounded-xl">
-                    <label class="block text-sm font-bold mb-3 text-blue-300">吊り革の数: <span id="strap-val" class="text-xl">60</span>本</label>
-                    <input type="range" id="strap-count" min="0" max="130" step="1" value="65" class="w-full accent-blue-500" oninput="update();">
-                    <p class="text-[10px] text-slate-400 mt-2">※立席人数分以上の設置が法的に必須です</p>
+                <div class="space-y-4">
+                    <label class="block text-xs font-black text-slate-400 uppercase">Energy & Weight</label>
+                    <div class="bg-slate-800/50 p-4 rounded-2xl border border-slate-700">
+                        <div class="flex justify-between text-sm mb-2">
+                            <span class="text-sky-300 font-bold">Straps</span>
+                            <span id="strap-val" class="font-mono">60</span>
+                        </div>
+                        <input type="range" id="strap-count" min="0" max="130" step="1" value="65" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500" oninput="update();">
+                    </div>
+                    
+                    <div class="flex items-center justify-between p-2">
+                        <span class="text-sm">Spare Tire Removal</span>
+                        <input type="checkbox" id="spare-tire" class="w-6 h-6 rounded-lg accent-sky-500" onchange="update();">
+                    </div>
+                    <div class="flex items-center justify-between p-2">
+                        <span class="text-sm">Min Energy Load</span>
+                        <input type="checkbox" id="min-energy" class="w-6 h-6 rounded-lg accent-sky-500" onchange="update();">
+                    </div>
                 </div>
 
-                <div class="space-y-4 text-sm">
-                    <div class="flex items-center justify-between">
-                        <span>スペアタイヤ撤去</span>
-                        <input type="checkbox" id="spare-tire" class="w-5 h-5" onchange="update();">
-                    </div>
-                    <div class="flex items-center justify-between">
-                        <span>燃料/電池を最小に</span>
-                        <input type="checkbox" id="min-energy" class="w-5 h-5" onchange="update();">
-                    </div>
-                </div>
-
-                <hr class="border-slate-700">
-                
-                <div class="space-y-3">
-                    <h4 class="text-xs font-bold text-slate-500 uppercase tracking-widest">法規チェック</h4>
-                    <div id="chk-gvw" class="text-xs">● 重量制限 (15t)</div>
-                    <div id="chk-axle" class="text-xs">● 軸重制限 (10t)</div>
-                    <div id="chk-strap" class="text-xs">● 吊り革義務数</div>
-                    <div id="chk-seats" class="text-xs">● 優先席(3席)</div>
+                <div class="pt-4 border-t border-slate-700 space-y-2">
+                    <h4 class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Regulations</h4>
+                    <div id="chk-gvw" class="text-xs font-bold transition-colors">● GVW Max 15,000kg</div>
+                    <div id="chk-axle" class="text-xs font-bold transition-colors">● Axle Max 10,000kg</div>
+                    <div id="chk-strap" class="text-xs font-bold transition-colors">● Mandatory Straps</div>
+                    <div id="chk-seats" class="text-xs font-bold transition-colors">● Priority Seats (Min 3)</div>
                 </div>
             </div>
 
-            <div class="flex-1 p-8 bg-slate-950">
+            <div class="flex-1 p-10 bg-slate-950/50">
                 <div class="relative w-full max-w-[850px] mx-auto">
-                    <div class="bus-floor h-[280px] shadow-2xl border-2 border-slate-700">
-                        <div class="absolute inset-0 opacity-10 flex">
-                            <div class="w-1/3 border-r border-white flex items-center justify-center text-xs">FRONT</div>
-                            <div class="w-1/3 border-r border-white flex items-center justify-center text-xs">CENTER</div>
-                            <div class="w-1/3 flex items-center justify-center text-xs">REAR</div>
+                    <div class="bus-floor h-[300px] shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+                        <div class="absolute inset-0 flex justify-around items-center opacity-5 pointer-events-none">
+                            <div class="text-8xl font-black">ERGA</div>
                         </div>
                         
                         <div id="strap-layer" class="absolute inset-0 pointer-events-none"></div>
                         <div id="seat-container" class="absolute inset-0"></div>
                         
-                        <div class="absolute left-6 top-10 w-14 h-14 bg-slate-600 rounded flex items-center justify-center text-[10px] font-bold">DRV</div>
+                        <div class="absolute left-6 top-10 w-16 h-16 bg-slate-700 border-2 border-slate-500 rounded-xl flex items-center justify-center text-[10px] font-black shadow-lg">DRIVER</div>
                     </div>
 
-                    <div class="mt-8 grid grid-cols-2 gap-16">
-                        <div>
-                            <div class="flex justify-between text-[10px] mb-1 font-bold">FRONT AXLE <span id="txt-front"></span></div>
+                    <div class="mt-12 grid grid-cols-2 gap-20">
+                        <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-800">
+                            <div class="flex justify-between text-[10px] font-black text-slate-500 mb-2 tracking-tighter">FRONT AXLE <span id="txt-front" class="text-slate-300"></span></div>
                             <div class="indicator-bar"><div id="bar-front" class="indicator-fill"></div></div>
                         </div>
-                        <div>
-                            <div class="flex justify-between text-[10px] mb-1 font-bold">REAR AXLE <span id="txt-rear"></span></div>
+                        <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-800">
+                            <div class="flex justify-between text-[10px] font-black text-slate-500 mb-2 tracking-tighter">REAR AXLE <span id="txt-rear" class="text-slate-300"></span></div>
                             <div class="indicator-bar"><div id="bar-rear" class="indicator-fill"></div></div>
                         </div>
                     </div>
@@ -124,11 +129,10 @@
         
         for (let i = 0; i < BASE_SEATS; i++) {
             let x, y;
-            // 座席レイアウト（エルガ風）
-            if (i < 4) { x = 140 + i*40; y = 30; } // 前左
-            else if (i < 8) { x = 140 + (i-4)*40; y = 220; } // 前右
-            else if (i < 18) { x = 420 + (i-8)*35; y = 30; } // 後左
-            else { x = 420 + (i-18)*35; y = 220; } // 後右
+            if (i < 4) { x = 150 + i*42; y = 40; }
+            else if (i < 8) { x = 150 + (i-4)*42; y = 230; }
+            else if (i < 18) { x = 440 + (i-8)*35; y = 40; }
+            else { x = 440 + (i-18)*35; y = 230; }
 
             const s = { id: i, removed: false, priority: (i < 3), x, y };
             seats.push(s);
@@ -137,7 +141,12 @@
             d.id = `seat-${i}`;
             d.className = `seat ${s.priority ? 'priority' : 'active'}`;
             d.style.left = x + 'px'; d.style.top = y + 'px';
-            d.onclick = () => { s.removed = !s.removed; d.classList.toggle('removed', s.removed); update(); };
+            d.title = s.priority ? "Priority Seat" : "Standard Seat";
+            d.onclick = () => { 
+                s.removed = !s.removed; 
+                d.classList.toggle('removed', s.removed); 
+                update(); 
+            };
             container.appendChild(d);
         }
         update();
@@ -151,38 +160,33 @@
 
         document.getElementById('strap-val').innerText = sCount;
 
-        // --- 重量計算 ---
         let weight = (type === 'ICE' ? 10100 : 11800);
-        weight += (minEnergy ? 100 : (type === 'ICE' ? 250 : 800)); // 燃料/電池
+        weight += (minEnergy ? 100 : (type === 'ICE' ? 250 : 800));
         if (spareRem) weight -= 80;
-        weight += sCount * 1.2; // 吊り革(レール込み約1.2kg)
+        weight += sCount * 1.2;
 
-        // --- 定員計算 ---
         const remCount = seats.filter(s => s.removed).length;
         const eff = (type === 'ICE' ? 0.82 : 1.0);
         const stNum = 57 + Math.floor((remCount * 0.45) / 0.14 * eff);
         const cap = (BASE_SEATS - remCount) + stNum + 1;
 
-        // --- 軸重計算 ---
         const totalWeight = weight + (cap * 55);
-        const frontRem = seats.filter(s => s.removed && s.x < 400).length;
+        const frontRem = seats.filter(s => s.removed && s.x < 420).length;
         let fw = weight * 0.43 + (cap * 55 * 0.45) - (frontRem * 25);
         let rw = totalWeight - fw;
 
-        // --- 表示反映 ---
-        document.getElementById('disp-capacity').innerHTML = `${cap} <span class="text-lg text-slate-500">(${stNum})</span>`;
+        document.getElementById('disp-capacity').innerHTML = `${cap} <span class="text-2xl text-slate-600">/ ${stNum}</span>`;
         document.getElementById('disp-weight').innerText = Math.round(totalWeight).toLocaleString();
         
         const isStrapOk = sCount >= stNum;
-        document.getElementById('disp-strap-status').innerText = `${sCount} / ${stNum} 本`;
-        document.getElementById('disp-strap-status').className = `text-2xl font-bold ${isStrapOk ? 'text-blue-400' : 'text-red-500'}`;
-        document.getElementById('strap-warning').innerText = isStrapOk ? "✓ 法定基準クリア" : "⚠ 吊り革が足りません！";
+        document.getElementById('disp-strap-status').innerText = `${sCount} / ${stNum}`;
+        document.getElementById('disp-strap-status').className = `text-3xl font-bold ${isStrapOk ? 'text-sky-400' : 'text-rose-500'}`;
+        document.getElementById('strap-warning').innerText = isStrapOk ? "✓ COMPLIANT" : "⚠ INSUFFICIENT STRAPS";
+        document.getElementById('strap-warning').className = `text-[10px] font-bold mt-2 ${isStrapOk ? 'text-emerald-500' : 'text-rose-500'}`;
 
-        // メーター
         updateMeter('bar-front', 'txt-front', fw);
         updateMeter('bar-rear', 'txt-rear', rw);
 
-        // 法規チェック
         const isPriorityOk = seats.filter(s => s.priority && !s.removed).length >= 3;
         const isGvwOk = totalWeight <= 15000;
         const isAxleOk = fw <= 10000 && rw <= 10000;
@@ -195,33 +199,27 @@
         const status = document.getElementById('disp-status');
         if (isGvwOk && isAxleOk && isStrapOk && isPriorityOk) {
             const isRec = cap >= 95;
-            status.innerText = isRec ? "日本一達成！(95名)" : "車検合格";
-            status.className = `w-full py-3 rounded-xl font-black text-center text-lg ${isRec ? 'bg-yellow-500 text-black animate-bounce' : 'bg-green-600 text-white'}`;
+            status.innerText = isRec ? "RECORD ACHIEVED!" : "APPROVED";
+            status.className = `w-full py-4 rounded-2xl font-black text-center text-xl shadow-lg transition-all ${isRec ? 'bg-yellow-400 text-slate-900 animate-bounce' : 'bg-emerald-600 text-white'}`;
         } else {
-            status.innerText = "不適合 (認可不可)";
-            status.className = "w-full py-3 rounded-xl font-black text-center text-lg bg-red-600 text-white";
+            status.innerText = "FAILED / REJECTED";
+            status.className = "w-full py-4 rounded-2xl font-black text-center text-xl bg-rose-600 text-white shadow-lg";
         }
 
-        // --- 吊り革ビジュアライザ ---
         renderStraps(sCount, stNum);
     }
 
     function renderStraps(count, required) {
         const layer = document.getElementById('strap-layer');
         layer.innerHTML = '';
-        
-        // 通路と座席撤去エリアに吊り革を配置
-        const cols = 22; const rows = 5;
+        const cols = 22;
         for(let i=0; i<count; i++) {
             const strap = document.createElement('div');
-            strap.className = `strap ${i >= count ? 'hidden' : ''} ${count < required ? 'lack' : ''}`;
-            
-            // ランダムではなく格子状に綺麗に並べる
+            strap.className = `strap ${count < required ? 'lack' : ''}`;
             const c = i % cols;
             const r = Math.floor(i / cols);
-            strap.style.left = (150 + c * 30) + 'px';
-            strap.style.top = (85 + r * 28) + 'px';
-            
+            strap.style.left = (160 + c * 28) + 'px';
+            strap.style.top = (100 + r * 28) + 'px';
             layer.appendChild(strap);
         }
     }
@@ -230,14 +228,14 @@
         const per = Math.min(100, (val / 10000) * 100);
         const bar = document.getElementById(barId);
         bar.style.width = per + '%';
-        bar.style.backgroundColor = per > 95 ? '#e74c3c' : (per > 80 ? '#f1c40f' : '#3498db');
+        bar.style.backgroundColor = per > 95 ? '#f43f5e' : (per > 80 ? '#fbbf24' : '#0ea5e9');
         document.getElementById(txtId).innerText = `${Math.round(val).toLocaleString()} kg`;
     }
 
     function updateCheck(id, pass) {
         const el = document.getElementById(id);
-        el.className = `text-xs font-bold ${pass ? 'text-green-500' : 'text-red-500'}`;
-        el.innerText = (pass ? '✔ ' : '✘ ') + el.innerText.substring(2);
+        el.className = `text-xs font-bold transition-colors ${pass ? 'text-emerald-500' : 'text-rose-500'}`;
+        el.innerText = (pass ? '✓ ' : '✕ ') + el.innerText.substring(2);
     }
 
     init();
